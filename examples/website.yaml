@@ -1,0 +1,8 @@
+# Static website — just name and hostname, everything else is defaults.
+# Container serves on port 80, httpGet / probe, small resources.
+
+name: my-website
+
+ingress:
+  hosts:
+    - my-website.mysite.com

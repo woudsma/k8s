@@ -1,0 +1,54 @@
+# PostgreSQL database — public image, no ingress, persistent storage, exec probe.
+
+name: my-db
+
+image:
+  registry: ""
+  repository: postgres
+  tag: "16"
+  pullSecrets: false
+
+port: 5432
+
+service:
+  port: 5432
+
+strategy: Recreate
+
+ingress:
+  enabled: false
+
+probes:
+  type: exec
+  execCommand: ["pg_isready", "-U", "postgres"]
+  initialDelaySeconds: 30
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+persistence:
+  enabled: true
+  size: 5Gi
+  mountPath: /var/lib/postgresql/data
+
+env:
+  - name: POSTGRES_DB
+    valueFrom:
+      secretKeyRef:
+        name: my-db-secrets
+        key: postgres-db
+  - name: POSTGRES_USER
+    valueFrom:
+      secretKeyRef:
+        name: my-db-secrets
+        key: postgres-user
+  - name: POSTGRES_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-db-secrets
+        key: postgres-password

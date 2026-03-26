@@ -1,0 +1,29 @@
+name: Deploy (git push)
+
+on:
+  push:
+    branches: [main]
+
+env:
+  APP_NAME: my-app
+  DEPLOY_HOST: deploy@<SERVER_IP>
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+      - name: Push to server
+        run: |
+          git remote add deploy $DEPLOY_HOST:$APP_NAME
+          git push deploy main --force

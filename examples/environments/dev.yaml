@@ -1,0 +1,24 @@
+# Dev environment — relaxed resources, single replica, debug logging.
+
+name: my-app
+namespace: dev
+
+replicas: 1
+
+ingress:
+  hosts:
+    - my-app.mysite.com
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+env:
+  - name: NODE_ENV
+    value: development
+  - name: LOG_LEVEL
+    value: debug

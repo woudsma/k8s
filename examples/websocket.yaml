@@ -1,0 +1,22 @@
+# WebSocket app — like an API but with Traefik annotation for sticky sessions.
+
+name: my-ws-app
+port: 3000
+
+ingress:
+  hosts:
+    - my-ws-app.mysite.com
+  annotations:
+    traefik.ingress.kubernetes.io/router.middlewares: ""
+
+probes:
+  path: /health
+  initialDelaySeconds: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi

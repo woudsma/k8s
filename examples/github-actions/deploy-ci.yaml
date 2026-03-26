@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+env:
+  APP_NAME: my-app
+  REGISTRY: registry.mysite.com
+  CHART_REPO: username/k8s  # this repo, contains charts/app/
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to registry
+        run: echo "${{ secrets.REGISTRY_PASS }}" | docker login $REGISTRY -u ${{ secrets.REGISTRY_USER }} --password-stdin
+
+      - name: Build and push image
+        run: |
+          docker build -t $REGISTRY/$APP_NAME:${{ github.sha }} -t $REGISTRY/$APP_NAME:latest .
+          docker push $REGISTRY/$APP_NAME:${{ github.sha }}
+          docker push $REGISTRY/$APP_NAME:latest
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Checkout Helm chart
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.CHART_REPO }}
+          path: k8s-charts
+          sparse-checkout: charts/app
+
+      - name: Deploy to cluster
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          helm upgrade --install $APP_NAME k8s-charts/charts/app \
+            -f helm-values.yaml \
+            --set image.tag=${{ github.sha }} \
+            -n default

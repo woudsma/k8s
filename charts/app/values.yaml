@@ -1,0 +1,74 @@
+# -- App name (required, used for all resource names, labels, selectors)
+name: ""
+
+# -- Container image
+image:
+  registry: registry.mysite.com
+  repository: ""  # defaults to .name
+  tag: latest
+  pullSecrets: true  # set false for public images (postgres, redis)
+
+# -- Replicas
+replicas: 1
+
+# -- Container port
+port: 80
+
+# -- Service
+service:
+  port: 80
+  targetPort: ""  # defaults to .port
+
+# -- Ingress
+ingress:
+  enabled: true
+  hosts:
+    - ""  # e.g. my-app.mysite.com
+  annotations: {}
+
+# -- Probes
+probes:
+  type: http  # http | exec
+  path: /
+  execCommand: []  # e.g. ["pg_isready", "-U", "postgres"]
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+# -- Resources
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi
+
+# -- Deployment strategy
+strategy: RollingUpdate  # or Recreate
+
+# -- Override container command and args
+command: []
+args: []
+
+# -- Environment variables
+env: []
+# - name: NODE_ENV
+#   value: production
+# - name: DATABASE_URL
+#   valueFrom:
+#     secretKeyRef:
+#       name: my-app-secrets
+#       key: database-url
+
+# -- Pod annotations (e.g. prometheus scraping)
+podAnnotations: {}
+
+# -- Persistence (stateful apps)
+persistence:
+  enabled: false
+  size: 1Gi
+  mountPath: /data
+
+# -- Node scheduling
+nodeSelector: {}
+tolerations: []

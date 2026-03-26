@@ -1,0 +1,218 @@
+#!/bin/bash
+# Shared pre-receive hook for git-push deploys.
+# Symlinked into each bare repo's hooks/ directory.
+# Builds the pushed code with Kaniko and rolls out the deployment.
+# Runs BEFORE the ref is updated — a failed build rejects the push.
+
+set -euo pipefail
+
+# ── Config ─────────────────────────────────────────────────────
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+# shellcheck source=/dev/null
+source /home/deploy/.deploy.conf
+export KUBECONFIG="/home/deploy/.kube/config"
+
+APP_NAME=$(basename "$PWD" | sed 's/\.git$//')
+SAFE_NAME=$(echo "$APP_NAME" | tr '.' '-')
+CONTEXT_DIR="/opt/build-contexts/${APP_NAME}"
+
+# ── Read the push ──────────────────────────────────────────────
+while read -r _oldrev newrev _refname; do
+  SHA="$newrev"
+done
+
+TAG="${SHA:0:7}"
+IMAGE="${REGISTRY}/${APP_NAME}:${TAG}"
+JOB_NAME="build-${SAFE_NAME}-${TAG}"
+
+echo ""
+echo "════════════════════════════════════════════════════"
+echo "  Deploying ${APP_NAME} @ ${TAG}"
+echo "════════════════════════════════════════════════════"
+echo ""
+
+# ── Extract code to build context ──────────────────────────────
+echo "▶ Preparing build context..."
+rm -rf "$CONTEXT_DIR"
+mkdir -p "$CONTEXT_DIR"
+git archive "$SHA" | tar -x -C "$CONTEXT_DIR"
+
+# ── Clean up previous build job ────────────────────────────────
+kubectl delete job "$JOB_NAME" --ignore-not-found -n "$NAMESPACE" 2>&1 || true
+
+# ── Create Kaniko build job ────────────────────────────────────
+echo "▶ Creating build job..."
+cat <<EOF | kubectl apply -f - 2>&1
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: build
+    target: ${SAFE_NAME}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      containers:
+        - name: kaniko
+          image: gcr.io/kaniko-project/executor:latest
+          args:
+            - "--dockerfile=Dockerfile"
+            - "--context=dir:///workspace"
+            - "--destination=${IMAGE}"
+            - "--destination=${REGISTRY}/${APP_NAME}:latest"
+            - "--cache=true"
+            - "--cache-repo=${REGISTRY}/${APP_NAME}/cache"
+          volumeMounts:
+            - name: build-context
+              mountPath: /workspace
+              readOnly: true
+            - name: docker-config
+              mountPath: /kaniko/.docker
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "500m"
+            limits:
+              memory: "2Gi"
+              cpu: "2"
+      volumes:
+        - name: build-context
+          hostPath:
+            path: ${CONTEXT_DIR}
+            type: Directory
+        - name: docker-config
+          secret:
+            secretName: kaniko-docker-config
+      restartPolicy: Never
+EOF
+
+# ── Stream build logs ──────────────────────────────────────────
+echo "▶ Waiting for build pod..."
+
+# Wait for the pod to exist
+POD=""
+for _ in $(seq 1 60); do
+  POD=$(kubectl get pods -l "job-name=${JOB_NAME}" -n "$NAMESPACE" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+  if [ -n "$POD" ]; then
+    break
+  fi
+  sleep 2
+done
+
+if [ -z "$POD" ]; then
+  echo "✗ Build pod never appeared!"
+  rm -rf "$CONTEXT_DIR"
+  exit 1
+fi
+
+# Wait for the container to be running (past ContainerCreating)
+echo "▶ Waiting for container to start..."
+for _ in $(seq 1 60); do
+  PHASE=$(kubectl get pod "$POD" -n "$NAMESPACE" -o jsonpath='{.status.containerStatuses[0].state}' 2>/dev/null || true)
+  if [[ "$PHASE" == *"running"* ]] || [[ "$PHASE" == *"terminated"* ]]; then
+    break
+  fi
+  sleep 2
+done
+
+# Stream logs — follows until completion
+echo ""
+echo "▶ Build output:"
+echo ""
+kubectl logs -f "$POD" -n "$NAMESPACE" 2>&1
+echo ""
+
+# ── Check result ───────────────────────────────────────────────
+kubectl wait --for=condition=complete --timeout=30s "job/${JOB_NAME}" -n "$NAMESPACE" 2>/dev/null || true
+STATUS=$(kubectl get job "$JOB_NAME" -n "$NAMESPACE" -o jsonpath='{.status.succeeded}')
+if [ "$STATUS" != "1" ]; then
+  echo "✗ Build failed!"
+  rm -rf "$CONTEXT_DIR"
+  exit 1
+fi
+
+# ── Deploy ──────────────────────────────────────────────────────
+if [ -f "${CONTEXT_DIR}/helm-values.yaml" ]; then
+  # ── Helm deploy ──────────────────────────────────────────────
+  echo "▶ Deploying with Helm..."
+  helm upgrade --install "$SAFE_NAME" "$CHART_PATH" \
+    -f "${CONTEXT_DIR}/helm-values.yaml" \
+    --set image.tag="$TAG" \
+    -n "$NAMESPACE" 2>&1
+
+  DEPLOY_NAME=$(grep '^name:' "${CONTEXT_DIR}/helm-values.yaml" | awk '{print $2}' | tr -d "\"'")
+  DEPLOY_NAME="${DEPLOY_NAME:-$SAFE_NAME}"
+  echo "▶ Waiting for rollout..."
+  for _ in $(seq 1 15); do
+    if kubectl get deployment "$DEPLOY_NAME" -n "$NAMESPACE" &>/dev/null; then
+      break
+    fi
+    sleep 2
+  done
+  kubectl rollout status "deployment/${DEPLOY_NAME}" -n "$NAMESPACE" --timeout=120s 2>&1
+
+elif [ -d "${CONTEXT_DIR}/k8s" ]; then
+  # ── Legacy kubectl deploy ────────────────────────────────────
+  echo "▶ Applying k8s/ manifests..."
+  kubectl apply -f "${CONTEXT_DIR}/k8s/" -n "$NAMESPACE" 2>&1
+
+  # Find the deployment name
+  DEPLOY_NAME=""
+  for name in "$APP_NAME" "$SAFE_NAME"; do
+    if kubectl get deployment "$name" -n "$NAMESPACE" &>/dev/null; then
+      DEPLOY_NAME="$name"
+      break
+    fi
+  done
+
+  if [ -z "$DEPLOY_NAME" ] && [ -d "${CONTEXT_DIR}/k8s" ]; then
+    # shellcheck disable=SC1083
+    DEPLOY_NAME=$(grep -rl 'kind: Deployment' "${CONTEXT_DIR}/k8s/" | head -1 | xargs grep 'name:' | head -1 | awk '{print $2}')
+    if [ -n "$DEPLOY_NAME" ] && ! kubectl get deployment "$DEPLOY_NAME" -n "$NAMESPACE" &>/dev/null; then
+      DEPLOY_NAME=""
+    fi
+  fi
+
+  if [ -z "$DEPLOY_NAME" ]; then
+    echo "⚠ No deployment found — image built and pushed, but no rollout performed."
+    echo "  Create a deployment manually or add helm-values.yaml to your project."
+    rm -rf "$CONTEXT_DIR"
+    exit 0
+  fi
+
+  # shellcheck disable=SC1083
+  CONTAINER_NAME=$(kubectl get deployment "$DEPLOY_NAME" -n "$NAMESPACE" \
+    -o jsonpath='{.spec.template.spec.containers[0].name}')
+
+  echo "▶ Rolling out ${APP_NAME} (deployment/${DEPLOY_NAME})..."
+  kubectl set image "deployment/${DEPLOY_NAME}" "${CONTAINER_NAME}=${IMAGE}" -n "$NAMESPACE" 2>&1
+  kubectl rollout status "deployment/${DEPLOY_NAME}" -n "$NAMESPACE" --timeout=120s 2>&1
+
+else
+  echo "⚠ No helm-values.yaml or k8s/ directory found — image built and pushed, but no deploy performed."
+  rm -rf "$CONTEXT_DIR"
+  exit 0
+fi
+
+# ── Clean up ───────────────────────────────────────────────────
+rm -rf "$CONTEXT_DIR"
+
+# ── Print result ───────────────────────────────────────────────
+# shellcheck disable=SC1083
+HOSTS=$(kubectl get ingress -n "$NAMESPACE" -l "app=${DEPLOY_NAME}" -o jsonpath='{.items[*].spec.rules[*].host}' 2>/dev/null)
+if [ -z "$HOSTS" ]; then
+  HOSTS=$(kubectl get ingress -n "$NAMESPACE" -o jsonpath="{.items[?(@.metadata.name==\"${DEPLOY_NAME}\")].spec.rules[*].host}" 2>/dev/null)
+fi
+
+echo "${APP_NAME} deployed → ${IMAGE}"
+echo ""
+if [ -n "$HOSTS" ]; then
+  for HOST in $HOSTS; do
+    echo "✅ https://${HOST}"
+  done
+fi
+echo ""

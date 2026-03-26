@@ -1,0 +1,8 @@
+# Multi-domain app — serves both apex and www subdomain.
+
+name: my-site
+
+ingress:
+  hosts:
+    - my-site.mysite.com
+    - www.my-site.mysite.com

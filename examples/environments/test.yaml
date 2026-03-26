@@ -1,0 +1,29 @@
+# Test environment — mirrors prod settings at lower scale.
+
+name: my-app
+namespace: test
+
+replicas: 1
+
+ingress:
+  hosts:
+    - my-app-test.mysite.com
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+env:
+  - name: NODE_ENV
+    value: test
+  - name: LOG_LEVEL
+    value: info
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: my-app-test-secrets
+        key: database-url

@@ -1,0 +1,29 @@
+# Node.js / Python API — custom port, health endpoint, env vars.
+
+name: my-api
+port: 3000
+
+ingress:
+  hosts:
+    - my-api.mysite.com
+
+probes:
+  path: /health
+  initialDelaySeconds: 10
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+env:
+  - name: NODE_ENV
+    value: production
+  - name: DATABASE_URL
+    valueFrom:
+      secretKeyRef:
+        name: my-api-secrets
+        key: database-url

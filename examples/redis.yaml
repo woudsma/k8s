@@ -1,0 +1,44 @@
+# Redis — public image, no ingress, persistent storage, exec probe.
+
+name: my-redis
+
+image:
+  registry: ""
+  repository: redis
+  tag: "7"
+  pullSecrets: false
+
+port: 6379
+
+service:
+  port: 6379
+
+strategy: Recreate
+
+ingress:
+  enabled: false
+
+probes:
+  type: exec
+  execCommand: ["redis-cli", "ping"]
+  initialDelaySeconds: 10
+
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+
+persistence:
+  enabled: true
+  size: 1Gi
+  mountPath: /data
+
+env:
+  - name: REDIS_PASSWORD
+    valueFrom:
+      secretKeyRef:
+        name: my-redis-secrets
+        key: redis-password
