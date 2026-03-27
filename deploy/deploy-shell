@@ -18,6 +18,14 @@ CMD="$2"
 if [[ "$CMD" =~ ^git-receive-pack\ \'(.+)\'$ ]]; then
   REPO_NAME="${BASH_REMATCH[1]}"
   REPO_NAME="${REPO_NAME%.git}"  # strip .git suffix if present
+
+  # Reject path traversal and invalid characters
+  if [[ ! "$REPO_NAME" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
+    echo "Invalid app name: ${REPO_NAME}" >&2
+    echo "Names must start with a letter or digit, followed by letters, digits, dots, hyphens, or underscores." >&2
+    exit 1
+  fi
+
   REPO_PATH="${DEPLOY_HOME}/${REPO_NAME}"
 
   # Auto-create bare repo on first push
