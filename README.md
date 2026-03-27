@@ -10,7 +10,7 @@ Infrastructure configuration for a self-hosted Kubernetes cluster running on a H
 | `cert-manager/` | ClusterIssuer for automatic Let's Encrypt SSL via cert-manager |
 | `registry/` | Private Docker registry (in-cluster) with htpasswd auth |
 | `deploy/` | Git-push deploy setup — Dokku-like `git push deploy main` experience |
-| `monitoring/` | Trivy CronJob for daily image vulnerability scanning |
+| `monitoring/` | Headlamp dashboard + Trivy vulnerability scanning |
 | `examples/` | Example `helm-values.yaml` files for common app types |
 
 ## Stack
@@ -76,12 +76,7 @@ Or follow the steps manually:
 First:
 
 1. Point your domain to the server — add a DNS A record for `*.<domain>` to the server IP.
-2. Update the registry domain in this repo to match your domain. It appears in:
-   - `charts/app/values.yaml` — default image registry
-   - `deploy/setup-deploy.sh` — `REGISTRY` variable
-   - `registry/registry.yaml` — ingress host and TLS config
-   - `examples/github-actions/deploy-ci.yaml` — CI registry URL
-   - `examples/github-actions/deploy-environments.yaml` — CI registry URL
+2. If setting up manually (not using `setup.sh`), replace `mysite.com` with your domain across all `.yaml` and `.sh` files, and update the email in `cert-manager/cluster-issuer.yaml`.
 
 ```bash
 # 1. Install K3s
@@ -129,6 +124,26 @@ bash /tmp/k8s-setup/deploy/setup-deploy.sh "$(cat ~/.ssh/authorized_keys)"
 Copy the kubeconfig from `/etc/rancher/k3s/k3s.yaml` to your local `~/.kube/config` (replace `127.0.0.1` with the server IP) for remote `kubectl` access.
 
 See [CLAUDE.md](CLAUDE.md) for detailed explanations of each step.
+
+## Monitoring
+
+### Headlamp (cluster dashboard)
+
+A lightweight web dashboard at `headlamp.<domain>` for browsing pods, viewing logs, exec-ing into containers, and checking resource status.
+
+Deployed automatically by `setup.sh`. To generate a login token:
+
+```bash
+kubectl create token headlamp -n headlamp --duration=8760h
+```
+
+### Trivy (vulnerability scanning)
+
+Daily CronJob that scans all running images for HIGH/CRITICAL vulnerabilities. View results:
+
+```bash
+kubectl logs -l app=trivy-scan --tail=100
+```
 
 ## Examples
 

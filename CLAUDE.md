@@ -1,5 +1,15 @@
 # K8s Cluster — Context & Decisions
 
+## Checklist for Adding New Components
+
+When adding a new component/service to the cluster:
+
+1. Create the manifest in the appropriate directory
+2. Use `mysite.com` as the domain placeholder — `setup.sh` replaces it repo-wide automatically
+3. Add the deploy step to `setup.sh`
+4. Update the repo structure tree in this file
+5. Update `README.md` if it affects the user-facing docs
+
 ## Overview
 
 Self-hosted Kubernetes cluster on a Hetzner VPS using K3s. The cluster runs personal websites, APIs, and databases with automatic SSL, a private container registry, and a build service for Dokku-like deployments.
@@ -82,6 +92,7 @@ k8s/
 │   └── pre-receive-hook     # Shared hook: Kaniko build + Helm deploy
 ├── examples/               # Example helm-values.yaml files per app type
 ├── monitoring/
+│   ├── headlamp.yaml       # Lightweight K8s dashboard (headlamp.mysite.com)
 │   └── trivy-scan.yaml     # Daily image vulnerability scanner (CronJob)
 ├── registry/
 │   └── registry.yaml       # Private registry: Deployment, PVC, Service, Ingress
@@ -182,7 +193,18 @@ kubectl create secret generic git-credentials \
   --from-literal=token=<GITHUB_PAT>
 ```
 
-### 9. Set up git-push deploys
+### 9. Deploy Headlamp dashboard
+
+```bash
+kubectl apply -f /tmp/k8s-setup/monitoring/headlamp.yaml
+
+# Create a long-lived token to log in
+kubectl create token headlamp -n headlamp --duration=8760h
+```
+
+Visit `headlamp.mysite.com` and paste the token to log in.
+
+### 10. Set up git-push deploys
 
 ```bash
 # Run the setup script (repo was copied in step 5)
@@ -310,4 +332,7 @@ kubectl logs -l app=trivy-scan --tail=100
 
 # Trivy: run a scan manually
 kubectl create job --from=cronjob/trivy-scan trivy-scan-manual
+
+# Headlamp: generate a new login token
+kubectl create token headlamp -n headlamp --duration=8760h
 ```

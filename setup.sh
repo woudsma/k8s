@@ -16,11 +16,12 @@ SERVER_IP="$(hostname -I | awk '{print $1}')"
 # ── Prompts ────────────────────────────────────────────────────
 
 read -rp "Domain (e.g. mysite.com): " DOMAIN
+read -rp "Email for Let's Encrypt certificates: " ACME_EMAIL
 read -rp "Registry username: " REG_USER
 read -rsp "Registry password: " REG_PASS
 echo
 
-if [ -z "$DOMAIN" ] || [ -z "$REG_USER" ] || [ -z "$REG_PASS" ]; then
+if [ -z "$DOMAIN" ] || [ -z "$ACME_EMAIL" ] || [ -z "$REG_USER" ] || [ -z "$REG_PASS" ]; then
   echo "Error: all fields are required."
   exit 1
 fi
@@ -35,14 +36,11 @@ read -rp "Install login banner (motd.sh — shows cluster status on SSH login)? 
 echo ""
 echo "▶ Updating domain to ${DOMAIN}..."
 
-sed -i "s/registry\.mysite\.com/registry.${DOMAIN}/g" \
-  "${SCRIPT_DIR}/registry/registry.yaml" \
-  "${SCRIPT_DIR}/deploy/setup-deploy.sh" \
-  "${SCRIPT_DIR}/charts/app/values.yaml" \
-  "${SCRIPT_DIR}/examples/github-actions/deploy-ci.yaml" \
-  "${SCRIPT_DIR}/examples/github-actions/deploy-environments.yaml"
+find "${SCRIPT_DIR}" -type f \( -name '*.yaml' -o -name '*.sh' \) \
+  ! -name 'setup.sh' \
+  -exec sed -i "s/mysite\.com/${DOMAIN}/g" {} +
 
-sed -i "s/info@mysite\.com/info@${DOMAIN}/g" \
+sed -i "s/info@${DOMAIN}/${ACME_EMAIL}/" \
   "${SCRIPT_DIR}/cert-manager/cluster-issuer.yaml"
 
 # ── apt update ─────────────────────────────────────────────────
@@ -128,7 +126,13 @@ echo ""
 echo "▶ Setting up git-push deploys..."
 bash "${SCRIPT_DIR}/deploy/setup-deploy.sh" "$(cat ~/.ssh/authorized_keys)"
 
-# ── Monitoring (Trivy image scanning) ──────────────────────────
+# ── Monitoring ─────────────────────────────────────────────────
+
+echo ""
+echo "▶ Deploying Headlamp dashboard..."
+kubectl apply -f "${SCRIPT_DIR}/monitoring/headlamp.yaml"
+
+HEADLAMP_TOKEN=$(kubectl create token headlamp -n headlamp --duration=8760h 2>/dev/null || echo "(token generation failed — create manually after setup)")
 
 echo ""
 echo "▶ Setting up image vulnerability scanning..."
@@ -163,7 +167,11 @@ echo "3. Test a deploy:"
 echo "   git remote add deploy deploy@${SERVER_IP}:test-app"
 echo "   git push deploy main"
 echo ""
-echo "4. For GitHub Actions, add these repo secrets:"
+echo "4. Log in to Headlamp dashboard:"
+echo "   https://headlamp.${DOMAIN}"
+echo "   Token: ${HEADLAMP_TOKEN}"
+echo ""
+echo "5. For GitHub Actions, add these repo secrets:"
 echo "   KUBECONFIG    — contents of ~/.kube/config (with server IP)"
 echo "   REGISTRY_USER — ${REG_USER}"
 echo "   REGISTRY_PASS — (the password you just entered)"
