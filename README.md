@@ -10,6 +10,7 @@ Infrastructure configuration for a self-hosted Kubernetes cluster running on a H
 | `cert-manager/` | ClusterIssuer for automatic Let's Encrypt SSL via cert-manager |
 | `registry/` | Private Docker registry (in-cluster) with htpasswd auth |
 | `deploy/` | Git-push deploy setup — Dokku-like `git push deploy main` experience |
+| `monitoring/` | Trivy CronJob for daily image vulnerability scanning |
 | `examples/` | Example `helm-values.yaml` files for common app types |
 
 ## Stack

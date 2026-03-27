@@ -81,6 +81,8 @@ k8s/
 │   ├── deploy-shell         # Custom shell for the deploy user
 │   └── pre-receive-hook     # Shared hook: Kaniko build + Helm deploy
 ├── examples/               # Example helm-values.yaml files per app type
+├── monitoring/
+│   └── trivy-scan.yaml     # Daily image vulnerability scanner (CronJob)
 ├── registry/
 │   └── registry.yaml       # Private registry: Deployment, PVC, Service, Ingress
 ```
@@ -302,4 +304,10 @@ helm template <app> charts/app -f helm-values.yaml
 
 # Helm: roll back to previous version
 helm rollback <app> -n default
+
+# Trivy: view latest scan results
+kubectl logs -l app=trivy-scan --tail=100
+
+# Trivy: run a scan manually
+kubectl create job --from=cronjob/trivy-scan trivy-scan-manual
 ```

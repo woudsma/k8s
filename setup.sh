@@ -128,6 +128,12 @@ echo ""
 echo "▶ Setting up git-push deploys..."
 bash "${SCRIPT_DIR}/deploy/setup-deploy.sh" "$(cat ~/.ssh/authorized_keys)"
 
+# ── Monitoring (Trivy image scanning) ──────────────────────────
+
+echo ""
+echo "▶ Setting up image vulnerability scanning..."
+kubectl apply -f "${SCRIPT_DIR}/monitoring/trivy-scan.yaml"
+
 # ── motd (optional) ───────────────────────────────────────────
 
 if [[ "${DO_MOTD,,}" == "y" ]]; then
