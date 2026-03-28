@@ -29,6 +29,8 @@ fi
 REGISTRY="registry.${DOMAIN}"
 
 read -rp "Set up security hardening (firewall, fail2ban, disable password auth)? [y/N] " DO_SECURITY
+read -rp "Add 1GB swap space? [y/N] " DO_SWAP
+read -rp "Install zsh + oh-my-zsh? [y/N] " DO_ZSH
 read -rp "Install login banner (motd.sh — shows cluster status on SSH login)? [y/N] " DO_MOTD
 
 # ── Replace domain in config files ─────────────────────────────
@@ -59,6 +61,10 @@ echo "  Waiting for node to be ready..."
 until kubectl get nodes &>/dev/null; do sleep 2; done
 kubectl wait --for=condition=Ready node --all --timeout=120s
 
+# Set up 'k' alias for kubectl
+echo "alias k='kubectl'" >> /etc/profile.d/kubectl-alias.sh
+chmod 644 /etc/profile.d/kubectl-alias.sh
+
 # ── Security hardening (optional) ──────────────────────────────
 
 if [[ "${DO_SECURITY,,}" == "y" ]]; then
@@ -78,6 +84,18 @@ if [[ "${DO_SECURITY,,}" == "y" ]]; then
 
   apt install fail2ban -y
   systemctl enable fail2ban
+fi
+
+# ── Swap space (optional) ──────────────────────────────────────
+
+if [[ "${DO_SWAP,,}" == "y" ]]; then
+  echo ""
+  echo "▶ Setting up 1GB swap space..."
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
 # ── cert-manager ───────────────────────────────────────────────
@@ -137,6 +155,17 @@ HEADLAMP_TOKEN=$(kubectl create token headlamp -n headlamp --duration=8760h 2>/d
 echo ""
 echo "▶ Setting up image vulnerability scanning..."
 kubectl apply -f "${SCRIPT_DIR}/monitoring/trivy-scan.yaml"
+
+# ── zsh + oh-my-zsh (optional) ─────────────────────────────────
+
+if [[ "${DO_ZSH,,}" == "y" ]]; then
+  echo ""
+  echo "▶ Installing zsh + oh-my-zsh..."
+  apt install zsh -y
+  RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+  git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
+  echo "zstyle ':omz:update' mode disabled" >> ~/.zshrc
+fi
 
 # ── motd (optional) ───────────────────────────────────────────
 
