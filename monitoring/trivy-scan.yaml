@@ -27,7 +27,7 @@ spec:
               image: aquasec/trivy:0.58.2
               args:
                 - k8s
-                - --namespace=default
+                - --include-namespaces=default
                 - --report=summary
                 - --severity=HIGH,CRITICAL
                 - --timeout=10m
