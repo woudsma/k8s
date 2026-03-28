@@ -51,12 +51,16 @@ spec:
               port: {{ .Values.port }}
             initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
           readinessProbe:
             httpGet:
               path: {{ .Values.probes.path }}
               port: {{ .Values.port }}
             initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
           {{- else if eq .Values.probes.type "exec" }}
           livenessProbe:
             exec:
@@ -64,12 +68,16 @@ spec:
                 {{- toYaml .Values.probes.execCommand | nindent 16 }}
             initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
           readinessProbe:
             exec:
               command:
                 {{- toYaml .Values.probes.execCommand | nindent 16 }}
             initialDelaySeconds: {{ .Values.probes.initialDelaySeconds }}
             periodSeconds: {{ .Values.probes.periodSeconds }}
+            timeoutSeconds: {{ .Values.probes.timeoutSeconds }}
+            failureThreshold: {{ .Values.probes.failureThreshold }}
           {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

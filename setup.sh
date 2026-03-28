@@ -62,8 +62,10 @@ until kubectl get nodes &>/dev/null; do sleep 2; done
 kubectl wait --for=condition=Ready node --all --timeout=120s
 
 # Set up 'k' alias for kubectl
-echo "alias k='kubectl'" >> /etc/profile.d/kubectl-alias.sh
-chmod 644 /etc/profile.d/kubectl-alias.sh
+if [ ! -f /etc/profile.d/kubectl-alias.sh ]; then
+  echo "alias k='kubectl'" > /etc/profile.d/kubectl-alias.sh
+  chmod 644 /etc/profile.d/kubectl-alias.sh
+fi
 
 # ── Security hardening (optional) ──────────────────────────────
 
@@ -89,13 +91,18 @@ fi
 # ── Swap space (optional) ──────────────────────────────────────
 
 if [[ "${DO_SWAP,,}" == "y" ]]; then
-  echo ""
-  echo "▶ Setting up 1GB swap space..."
-  fallocate -l 1G /swapfile
-  chmod 600 /swapfile
-  mkswap /swapfile
-  swapon /swapfile
-  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  if [ -f /swapfile ]; then
+    echo ""
+    echo "▶ Swap already exists, skipping..."
+  else
+    echo ""
+    echo "▶ Setting up 1GB swap space..."
+    fallocate -l 1G /swapfile
+    chmod 600 /swapfile
+    mkswap /swapfile
+    swapon /swapfile
+    echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  fi
 fi
 
 # ── cert-manager ───────────────────────────────────────────────
@@ -110,13 +117,13 @@ kubectl apply -f "${SCRIPT_DIR}/cert-manager/cluster-issuer.yaml"
 
 echo ""
 echo "▶ Deploying private registry..."
-kubectl create namespace registry
+kubectl create namespace registry --dry-run=client -o yaml | kubectl apply -f -
 
 apt install apache2-utils -y
 htpasswd -Bbc /tmp/registry-htpasswd "$REG_USER" "$REG_PASS"
 kubectl create secret generic registry-auth \
   --from-file=htpasswd=/tmp/registry-htpasswd \
-  -n registry
+  -n registry --dry-run=client -o yaml | kubectl apply -f -
 rm /tmp/registry-htpasswd
 
 kubectl apply -f "${SCRIPT_DIR}/registry/registry.yaml"
@@ -130,13 +137,15 @@ cat > /tmp/docker-config.json <<EOF
 {"auths":{"${REGISTRY}":{"username":"${REG_USER}","password":"${REG_PASS}"}}}
 EOF
 kubectl create secret generic kaniko-docker-config \
-  --from-file=config.json=/tmp/docker-config.json
+  --from-file=config.json=/tmp/docker-config.json \
+  --dry-run=client -o yaml | kubectl apply -f -
 rm /tmp/docker-config.json
 
 kubectl create secret docker-registry kaniko-registry-creds \
   --docker-server="$REGISTRY" \
   --docker-username="$REG_USER" \
-  --docker-password="$REG_PASS"
+  --docker-password="$REG_PASS" \
+  --dry-run=client -o yaml | kubectl apply -f -
 
 # ── Git-push deploy system ────────────────────────────────────
 
@@ -165,6 +174,12 @@ if [[ "${DO_ZSH,,}" == "y" ]]; then
   sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
   git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
   echo "zstyle ':omz:update' mode disabled" >> ~/.zshrc
+
+  # zsh doesn't source /etc/profile.d/ — add the kubectl alias to .zshrc
+  if ! grep -q "alias k='kubectl'" ~/.zshrc; then
+    echo -e "\nalias k='kubectl'" >> ~/.zshrc
+  fi
+
   chsh -s "$(which zsh)"
 fi
 
@@ -175,6 +190,11 @@ if [[ "${DO_MOTD,,}" == "y" ]]; then
   echo "▶ Installing login banner..."
   cp "${SCRIPT_DIR}/deploy/motd.sh" /etc/profile.d/k8s-motd.sh
   chmod 644 /etc/profile.d/k8s-motd.sh
+
+  # zsh doesn't source /etc/profile.d/ — add it to .zshrc if zsh is in use
+  if [ -f ~/.zshrc ] && ! grep -q 'k8s-motd.sh' ~/.zshrc; then
+    echo -e '\n# K8s cluster status on login\nsource /etc/profile.d/k8s-motd.sh' >> ~/.zshrc
+  fi
 fi
 
 # ── Done ───────────────────────────────────────────────────────
