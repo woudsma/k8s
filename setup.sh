@@ -162,9 +162,10 @@ if [[ "${DO_ZSH,,}" == "y" ]]; then
   echo ""
   echo "▶ Installing zsh + oh-my-zsh..."
   apt install zsh -y
-  RUNZSH=no sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+  sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
   git clone https://github.com/zsh-users/zsh-autosuggestions "${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-autosuggestions"
   echo "zstyle ':omz:update' mode disabled" >> ~/.zshrc
+  chsh -s "$(which zsh)"
 fi
 
 # ── motd (optional) ───────────────────────────────────────────
