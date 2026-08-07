@@ -231,8 +231,14 @@ if [[ "${DO_ZSH,,}" == "y" ]]; then
   if ! grep -q 'zsh-autosuggestions' ~/.zshrc; then
     sed -i 's/^plugins=(\(.*\))/plugins=(\1 zsh-autosuggestions)/' ~/.zshrc
   fi
-  if ! grep -q "':omz:update' mode disabled" ~/.zshrc 2>/dev/null; then
-    echo "zstyle ':omz:update' mode disabled" >> ~/.zshrc
+  # silence the login update prompt — the zstyle only counts if it's set *before*
+  # `source $ZSH/oh-my-zsh.sh`, so uncomment the stock line instead of appending
+  if ! grep -qE "^zstyle ':omz:update' mode disabled" ~/.zshrc 2>/dev/null; then
+    if grep -qE "^# zstyle ':omz:update' mode disabled" ~/.zshrc 2>/dev/null; then
+      sed -i "s|^# zstyle ':omz:update' mode disabled|zstyle ':omz:update' mode disabled|" ~/.zshrc
+    else
+      sed -i "1i zstyle ':omz:update' mode disabled" ~/.zshrc
+    fi
   fi
 
   # zsh doesn't source /etc/profile.d/ — add the kubectl alias to .zshrc
